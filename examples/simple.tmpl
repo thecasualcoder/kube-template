@@ -1,2 +1,13 @@
-{{- range itemsWith "end" }}{{ . }}
-{{ end }}
+{{- with endpoints "default" "tiller-deploy" }}
+{{- .TypeMeta.Kind }}
+{{- .TypeMeta.APIVersion }}
+{{- range .Subsets }}
+{{- $ports := .Ports }}
+{{- range .Addresses }}
+{{- $ip := .IP }}
+{{- range $ports }}
+{{ $ip }}:{{ .Port }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- end }}
