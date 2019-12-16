@@ -101,11 +101,11 @@ func run(fs afero.Fs, templateFlag string) error {
 
 	tmpl := template.
 		New("").
-		Funcs(map[string]interface{}{
+		Funcs(template.FuncMap{
 			"itemsWith": itemsWith,
 		})
 
-	tmpl, err = tmpl.Parse(string(sourceTemplateContents))
+	tmpl, err = tmpl.Parse(sourceTemplateContents)
 	if err != nil {
 		return fmt.Errorf("source template is not a valid template file: %w", err)
 	}
