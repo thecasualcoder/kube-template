@@ -2,14 +2,23 @@ package cmd
 
 import (
 	"fmt"
+	"github.com/mitchellh/go-homedir"
+	"github.com/thecasualcoder/kube-template/pkg/kubernetes"
+	"github.com/thecasualcoder/kube-template/pkg/manager"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"text/template"
 
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
+)
+
+const (
+	kubeConfigFlag = "kubeconfig"
+	templateFlag   = "template"
 )
 
 // rootCmd represents the base command when called without any subcommands
@@ -22,45 +31,56 @@ var rootCmd = &cobra.Command{
 			return fmt.Errorf("kube-tempalte does not accept args")
 		}
 
-		templateFlag, err := cmd.Flags().GetString("template")
+		templateFlag, err := cmd.Flags().GetString(templateFlag)
 		if err != nil {
 			return fmt.Errorf("error parsing template flag: %w", err)
 		}
 
+		kubeconfig, _ := cmd.Flags().GetString(kubeConfigFlag)
+
 		fs := afero.NewOsFs()
-		return run(fs, templateFlag)
+		return run(fs, templateFlag, kubeconfig)
 	},
 }
 
 // Execute adds all child commands to the root command and sets flags appropriately.
 // This is called by main.main(). It only needs to happen once to the rootCmd.
 func Execute() {
-	rootCmd.
-		Flags().
-		StringP("template", "t", "", "template to render. Should be of the format \"/path/to/template.tmpl:/path/to/rendered.conf\". \"-\" in target means STDOUT")
+	rootCmd.Flags().StringP(templateFlag, "t", "", "template to render. Should be of the format \"/path/to/template.tmpl:/path/to/rendered.conf\". \"-\" in target means STDOUT")
 
-	err := rootCmd.MarkFlagRequired("template")
+	kubeconfig := os.Getenv("KUBECONFIG")
+
+	if kubeconfig == "" {
+		home, err := homedir.Dir()
+		if err == nil {
+			kubeconfig = filepath.Join(home, ".kube", "config")
+		}
+	}
+
+	rootCmd.Flags().String(kubeConfigFlag, kubeconfig, "(optional) absolute path to the kubeconfig file")
+
+	err := rootCmd.MarkFlagRequired(templateFlag)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		_, _ = fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
 
 	if err := rootCmd.Execute(); err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		_, _ = fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
 }
 
-func parseTempalateFlag(flag string) (string, string, error) {
-	templateValue := strings.Split(flag, ":")
+func parseTemplateFlag(flagValue string) (string, string, error) {
+	templateValue := strings.Split(flagValue, ":")
 	if len(templateValue) != 2 {
 		return "", "", fmt.Errorf("template flag format is wrong")
 	}
 	return templateValue[0], templateValue[1], nil
 }
 
-func run(fs afero.Fs, templateFlag string) error {
-	sourceTemplate, targetFile, err := parseTempalateFlag(templateFlag)
+func run(fs afero.Fs, templateFlag string, kubeconfig string) error {
+	sourceTemplate, targetFile, err := parseTemplateFlag(templateFlag)
 	if err != nil {
 		return err
 	}
@@ -98,14 +118,27 @@ func run(fs afero.Fs, templateFlag string) error {
 			}
 		}
 	}
+	clientset, err := kubernetes.NewClient(kubeconfig)
+	if err != nil {
+		return fmt.Errorf("error creating kube-client: %w", err)
+	}
 
-	tmpl := template.
-		New("").
-		Funcs(template.FuncMap{
-			"itemsWith": itemsWith,
-		})
+	m := manager.New(clientset)
 
-	tmpl, err = tmpl.Parse(sourceTemplateContents)
+	err = renderTemplate(m, sourceTemplateContents, target)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func renderTemplate(m manager.Manager, source string, target io.Writer) error {
+	tmpl := template.New("").Funcs(template.FuncMap{
+		"endpoints": m.Endpoints,
+	})
+
+	tmpl, err := tmpl.Parse(source)
 	if err != nil {
 		return fmt.Errorf("source template is not a valid template file: %w", err)
 	}
@@ -114,14 +147,5 @@ func run(fs afero.Fs, templateFlag string) error {
 	if err != nil {
 		return fmt.Errorf("error rendering template: %w", err)
 	}
-
 	return nil
-}
-
-func itemsWith(suffix string) []string {
-	output := make([]string, 0, 5)
-	for i := 0; i < 5; i++ {
-		output = append(output, fmt.Sprintf("item-%d-%s", i, suffix))
-	}
-	return output
 }
