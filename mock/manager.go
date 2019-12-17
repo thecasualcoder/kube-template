@@ -58,7 +58,21 @@ func (m *MockManager) PodsWithLabels(namespace, labels string) (*v1.PodList, err
 }
 
 // PodsWithLabels indicates an expected call of PodsWithLabels
-func (mr *MockManagerMockRecorder) PodsForLabels(namespace, labels interface{}) *gomock.Call {
+func (mr *MockManagerMockRecorder) PodsWithLabels(namespace, labels interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PodsWithLabels", reflect.TypeOf((*MockManager)(nil).PodsWithLabels), namespace, labels)
+}
+
+// EventChan mocks base method
+func (m *MockManager) EventChan() <-chan struct{} {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "EventChan")
+	ret0, _ := ret[0].(<-chan struct{})
+	return ret0
+}
+
+// EventChan indicates an expected call of EventChan
+func (mr *MockManagerMockRecorder) EventChan() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "EventChan", reflect.TypeOf((*MockManager)(nil).EventChan))
 }

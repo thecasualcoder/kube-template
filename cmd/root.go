@@ -100,34 +100,70 @@ func run(
 
 	m := manager.New(clientset)
 
-	err = renderTemplate(m, templateArg.source, templateArg.target)
-	if err != nil {
-		return err
-	}
-
+	eventChan := m.EventChan()
+	errChan := make(chan error)
 	command := exec.Command(execCommand.command, execCommand.args...)
 	command.Stdout = os.Stdout
 	command.Stderr = os.Stderr
-	if err := command.Start(); err != nil {
-		return fmt.Errorf("error starting process %s: %v", execCommand.command, err)
-	}
 
 	go func() {
-		err := command.Wait()
-		_, _ = fmt.Fprintln(os.Stderr, err)
+		for range eventChan {
+			if err = renderTemplate(m, templateArg.source, templateArg.target); err != nil {
+				errChan <- err
+				return
+			}
+
+			if err := killCommandIfRunning(command); err != nil {
+				errChan <- err
+				return
+			}
+
+			if err := execute(command); err != nil {
+				errChan <- err
+				return
+			}
+
+		}
 	}()
 
-	const defaultCheckInterval = 2
-	for range time.NewTicker(defaultCheckInterval * time.Second).C {
-		if command.ProcessState != nil && command.ProcessState.Exited() {
-			if !command.ProcessState.Success() {
-				return fmt.Errorf("process exited with non-zero exit status %d", command.ProcessState.ExitCode())
-			}
-			_, err = fmt.Fprintln(os.Stderr, "process exited successfully")
+	return <-errChan
+}
+
+func killCommandIfRunning(command *exec.Cmd) error {
+	if command.ProcessState != nil && !command.ProcessState.Exited() {
+		err := command.Process.Signal(os.Interrupt)
+		if err != nil {
 			return err
+		}
+
+		const defaultInterruptWaitTimeout = 5
+		timeOutCh := time.After(defaultInterruptWaitTimeout * time.Second)
+		checkTimeOutCh := time.After(500 * time.Millisecond)
+		for {
+			select {
+			case <-timeOutCh:
+				return command.Process.Kill()
+			case <-checkTimeOutCh:
+				if command.ProcessState == nil || command.ProcessState.Exited() {
+					return nil
+				}
+				checkTimeOutCh = time.After(500 * time.Millisecond)
+			}
 		}
 	}
 
+	return nil
+}
+
+func execute(command *exec.Cmd) error {
+	if err := command.Start(); err != nil {
+		return fmt.Errorf("error starting process %s: %v", command.Path, err)
+	}
+	go func() {
+		if err := command.Wait(); err != nil {
+			_, _ = fmt.Fprintln(os.Stderr, err)
+		}
+	}()
 	return nil
 }
 

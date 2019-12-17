@@ -13,17 +13,23 @@ type Manager interface {
 	Endpoints(namespace, name string) (*v1.Endpoints, error)
 	// PodsWithLabels to list pods given namespace and labels
 	PodsWithLabels(namespace string, labels string) (*v1.PodList, error)
+	// EventChan will send events whenever there are changes to resources used by the render function
+	EventChan() <-chan struct{}
 }
 
 // New to create a new manager for a given kubernetes client
 func New(clientset *kubernetes.Clientset) Manager {
-	return &managerImpl{
+	impl := managerImpl{
 		clientset: clientset,
+		eventChan: make(chan struct{}, 1),
 	}
+	impl.eventChan <- struct{}{}
+	return &impl
 }
 
 type managerImpl struct {
 	clientset *kubernetes.Clientset
+	eventChan chan struct{}
 }
 
 func (m *managerImpl) Endpoints(namespace, name string) (*v1.Endpoints, error) {
@@ -34,4 +40,8 @@ func (m *managerImpl) PodsWithLabels(namespace string, labels string) (*v1.PodLi
 	return m.clientset.CoreV1().Pods(namespace).List(metaV1.ListOptions{
 		LabelSelector: labels,
 	})
+}
+
+func (m *managerImpl) EventChan() <-chan struct{} {
+	return m.eventChan
 }

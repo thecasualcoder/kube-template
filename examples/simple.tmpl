@@ -1,4 +1,4 @@
-{{- with endpoints "systems" "external-consul-dns" }}
+{{- with endpoints "default" "tiller-deploy" }}
 servers:
 {{- range .Subsets }}
 {{- $ports := .Ports }}
@@ -11,9 +11,9 @@ servers:
 {{- end }}
 {{- end }}
 
-{{- with pods "systems" "" }}
+{{- with pods "default" "name=tiller" }}
 servers:
 {{- range .Items }}
-  - {{ .Name }}:{{ .Status.PodIP }}
+  - {{ .Name }} with IP {{ .Status.PodIP }} with status {{ .Status.Phase }}
 {{- end }}
 {{- end }}

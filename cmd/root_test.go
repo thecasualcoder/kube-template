@@ -142,7 +142,7 @@ pods:
 		}
 		m.
 			EXPECT().
-			PodsForLabels("default", "foo=bar").
+			PodsWithLabels("default", "foo=bar").
 			Return(&pods, nil)
 
 		err := renderTemplate(m, source, target)
