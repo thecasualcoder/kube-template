@@ -1,13 +1,19 @@
-{{- with endpoints "default" "tiller-deploy" }}
-{{- .TypeMeta.Kind }}
-{{- .TypeMeta.APIVersion }}
+{{- with endpoints "systems" "external-consul-dns" }}
+servers:
 {{- range .Subsets }}
 {{- $ports := .Ports }}
 {{- range .Addresses }}
 {{- $ip := .IP }}
 {{- range $ports }}
-{{ $ip }}:{{ .Port }}
+  - {{ $ip }}:{{ .Port }}
 {{- end }}
 {{- end }}
+{{- end }}
+{{- end }}
+
+{{- with pods "systems" "" }}
+servers:
+{{- range .Items }}
+  - {{ .Name }}:{{ .Status.PodIP }}
 {{- end }}
 {{- end }}

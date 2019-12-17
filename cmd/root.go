@@ -112,7 +112,11 @@ func run(
 		return fmt.Errorf("error starting process %s: %v", execCommand.command, err)
 	}
 
-	go command.Wait()
+	go func() {
+		err := command.Wait()
+		_, _ = fmt.Fprintln(os.Stderr, err)
+	}()
+
 	const defaultCheckInterval = 2
 	for range time.NewTicker(defaultCheckInterval * time.Second).C {
 		if command.ProcessState != nil && command.ProcessState.Exited() {
@@ -130,6 +134,7 @@ func run(
 func renderTemplate(m manager.Manager, source string, target io.Writer) error {
 	tmpl := template.New("").Funcs(template.FuncMap{
 		"endpoints": m.Endpoints,
+		"pods":      m.PodsWithLabels,
 	})
 
 	tmpl, err := tmpl.Parse(source)

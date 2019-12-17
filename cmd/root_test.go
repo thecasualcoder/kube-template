@@ -11,59 +11,32 @@ import (
 	"testing"
 )
 
-func TestParseTemplateFlag(t *testing.T) {
-	type output struct {
-		firstRet  string
-		secondRet string
-		err       error
-	}
-
-	type testcase struct {
-		name string
-		in   string
-		out  output
-	}
-
-	tt := []testcase{
-		{name: "happy case", in: "input.tmpl:input.conf", out: output{"input.tmpl", "input.conf", nil}},
-		{name: "wrong format with more colons", in: "input.tmpl:input.conf:", out: output{"", "", fmt.Errorf("template flag format is wrong")}},
-		{name: "wrong format with less colons", in: "input.tmpl", out: output{"", "", fmt.Errorf("template flag format is wrong")}},
-	}
-
-	for _, testCase := range tt {
-		t.Run(testCase.name, func(t *testing.T) {
-			out1, out2, err := parseTemplateFlag(testCase.in)
-
-			assert.Equal(t, testCase.out.firstRet, out1)
-			assert.Equal(t, testCase.out.secondRet, out2)
-			assert.Equal(t, testCase.out.err, err)
-		})
-	}
-}
-
 func TestRenderTemplate(t *testing.T) {
 	t.Run("should render template with endpoints", func(t *testing.T) {
-		source := `
-{{- with endpoints "default" "haproxy" }}
-{{ .TypeMeta.Kind }}
-{{ .TypeMeta.APIVersion }}
-{{- range .Subsets }}
-{{- $ports := .Ports }}
-{{- range .Addresses }}
-{{ $ip := .IP }}
+		source := `{{- with endpoints "default" "haproxy" -}}
+endpoints:{{ range .Subsets -}}
+{{- $ports := .Ports -}}
+{{- range .Addresses -}}
+{{ $ip := .IP -}}
 {{- range $ports }}
-{{ $ip }}:{{ .Port }}
+- {{ $ip }}:{{ .Port }}
 {{- end }}
 {{- end }}
 {{- end }}
 {{- end }}
+`
+		expected := `endpoints:
+- 10.0.0.100:8080
+- 10.0.0.100:9100
+- 10.0.0.101:8080
+- 10.0.0.101:9100
 `
 		target := &bytes.Buffer{}
 		ctrl := gomock.NewController(t)
 		defer ctrl.Finish()
 
 		m := mock.NewMockManager(ctrl)
-		expected := v1.Endpoints{
+		endpoints := v1.Endpoints{
 			TypeMeta: apiV1.TypeMeta{
 				Kind:       "Endpoints",
 				APIVersion: "v1",
@@ -93,12 +66,12 @@ func TestRenderTemplate(t *testing.T) {
 		m.
 			EXPECT().
 			Endpoints("default", "haproxy").
-			Return(&expected, nil)
+			Return(&endpoints, nil)
 
 		err := renderTemplate(m, source, target)
 
 		assert.NoError(t, err)
-		assert.Equal(t, "\nEndpoints\nv1\n\n10.0.0.100:8080\n10.0.0.100:9100\n\n10.0.0.101:8080\n10.0.0.101:9100\n", target.String())
+		assert.Equal(t, expected, target.String())
 	})
 
 	t.Run("should return error if endpoints gives error", func(t *testing.T) {
@@ -124,5 +97,57 @@ func TestRenderTemplate(t *testing.T) {
 		}
 
 		assert.Equal(t, "", target.String())
+	})
+
+	t.Run("should render template with pods", func(t *testing.T) {
+		source := `{{- with pods "default" "foo=bar" -}}
+pods:
+{{- range .Items }}
+  - {{ .Name }}:{{ .Status.PodIP }}
+{{- end }}
+{{- end }}
+`
+		expected := `pods:
+  - pod-1:10.0.0.100
+  - pod-2:10.0.0.101
+`
+		target := &bytes.Buffer{}
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		m := mock.NewMockManager(ctrl)
+		pods := v1.PodList{
+			TypeMeta: apiV1.TypeMeta{
+				Kind:       "Endpoints",
+				APIVersion: "v1",
+			},
+			Items: []v1.Pod{
+				{
+					ObjectMeta: apiV1.ObjectMeta{
+						Name: "pod-1",
+					},
+					Status: v1.PodStatus{
+						PodIP: "10.0.0.100",
+					},
+				},
+				{
+					ObjectMeta: apiV1.ObjectMeta{
+						Name: "pod-2",
+					},
+					Status: v1.PodStatus{
+						PodIP: "10.0.0.101",
+					},
+				},
+			},
+		}
+		m.
+			EXPECT().
+			PodsForLabels("default", "foo=bar").
+			Return(&pods, nil)
+
+		err := renderTemplate(m, source, target)
+
+		assert.NoError(t, err)
+		assert.Equal(t, expected, target.String())
 	})
 }

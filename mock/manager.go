@@ -47,3 +47,18 @@ func (mr *MockManagerMockRecorder) Endpoints(namespace, name interface{}) *gomoc
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Endpoints", reflect.TypeOf((*MockManager)(nil).Endpoints), namespace, name)
 }
+
+// PodsWithLabels mocks base method
+func (m *MockManager) PodsWithLabels(namespace, labels string) (*v1.PodList, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "PodsWithLabels", namespace, labels)
+	ret0, _ := ret[0].(*v1.PodList)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// PodsWithLabels indicates an expected call of PodsWithLabels
+func (mr *MockManagerMockRecorder) PodsForLabels(namespace, labels interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PodsWithLabels", reflect.TypeOf((*MockManager)(nil).PodsWithLabels), namespace, labels)
+}

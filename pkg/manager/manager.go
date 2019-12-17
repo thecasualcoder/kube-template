@@ -11,6 +11,8 @@ import (
 type Manager interface {
 	// Endpoints to list endpoints given namespace and name
 	Endpoints(namespace, name string) (*v1.Endpoints, error)
+	// PodsWithLabels to list pods given namespace and labels
+	PodsWithLabels(namespace string, labels string) (*v1.PodList, error)
 }
 
 // New to create a new manager for a given kubernetes client
@@ -26,4 +28,10 @@ type managerImpl struct {
 
 func (m *managerImpl) Endpoints(namespace, name string) (*v1.Endpoints, error) {
 	return m.clientset.CoreV1().Endpoints(namespace).Get(name, metaV1.GetOptions{})
+}
+
+func (m *managerImpl) PodsWithLabels(namespace string, labels string) (*v1.PodList, error) {
+	return m.clientset.CoreV1().Pods(namespace).List(metaV1.ListOptions{
+		LabelSelector: labels,
+	})
 }
