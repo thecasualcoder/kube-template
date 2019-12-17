@@ -102,20 +102,24 @@ func run(
 
 	eventChan := m.EventChan()
 	errChan := make(chan error)
-	command := exec.Command(execCommand.command, execCommand.args...)
-	command.Stdout = os.Stdout
-	command.Stderr = os.Stderr
 
 	go func() {
+		var previousCmd *exec.Cmd
 		for range eventChan {
 			if err = renderTemplate(m, templateArg.source, templateArg.target); err != nil {
 				errChan <- err
 				return
 			}
 
-			if err := killCommandIfRunning(command); err != nil {
-				errChan <- err
-				return
+			command := exec.Command(execCommand.command, execCommand.args...)
+			command.Stdout = os.Stdout
+			command.Stderr = os.Stderr
+
+			if previousCmd != nil {
+				if err := killCommandIfRunning(previousCmd);  err != nil {
+					errChan <- err
+					return
+				}
 			}
 
 			if err := execute(command); err != nil {
@@ -123,6 +127,7 @@ func run(
 				return
 			}
 
+			previousCmd = command
 		}
 	}()
 
