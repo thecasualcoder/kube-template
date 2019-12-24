@@ -93,12 +93,12 @@ func run(
 	kubeconfig string,
 	execCommand execCommand,
 ) error {
-	clientset, err := kubernetes.NewClient(kubeconfig)
+	client, err := kubernetes.NewClient(kubeconfig)
 	if err != nil {
 		return fmt.Errorf("error creating kube-client: %w", err)
 	}
 
-	m := manager.New(clientset)
+	m := manager.New(client)
 
 	eventChan := m.EventChan()
 	errChan := make(chan error)
@@ -116,7 +116,7 @@ func run(
 			command.Stderr = os.Stderr
 
 			if previousCmd != nil {
-				if err := killCommandIfRunning(previousCmd);  err != nil {
+				if err := killCommandIfRunning(previousCmd); err != nil {
 					errChan <- err
 					return
 				}
