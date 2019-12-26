@@ -106,6 +106,11 @@ func run(
 	go func() {
 		var previousCmd *exec.Cmd
 		for range eventChan {
+			err := resetFileContent(templateArg.target)
+			if err != nil {
+				errChan <- err
+				return
+			}
 			if err = renderTemplate(m, templateArg.source, templateArg.target); err != nil {
 				errChan <- err
 				return
@@ -132,6 +137,18 @@ func run(
 	}()
 
 	return <-errChan
+}
+
+func resetFileContent(file afero.File) error {
+	err := file.Truncate(0)
+	if err != nil {
+		return fmt.Errorf("error when truncating file %s: %w", file.Name(), err)
+	}
+	_, err = file.Seek(0, 0)
+	if err != nil {
+		return fmt.Errorf("error when seeking to start of file %s: %w", file.Name(), err)
+	}
+	return nil
 }
 
 func killCommandIfRunning(command *exec.Cmd) error {
