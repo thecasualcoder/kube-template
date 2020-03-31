@@ -76,3 +76,17 @@ func (mr *MockManagerMockRecorder) EventChan() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "EventChan", reflect.TypeOf((*MockManager)(nil).EventChan))
 }
+
+// ErrorChan mocks base method
+func (m *MockManager) ErrorChan() <-chan error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ErrorChan")
+	ret0, _ := ret[0].(<-chan error)
+	return ret0
+}
+
+// ErrorChan indicates an expected call of ErrorChan
+func (mr *MockManagerMockRecorder) ErrorChan() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ErrorChan", reflect.TypeOf((*MockManager)(nil).ErrorChan))
+}

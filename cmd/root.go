@@ -1,14 +1,17 @@
 package cmd
 
 import (
+	"bytes"
 	"fmt"
 	"github.com/mitchellh/go-homedir"
 	"github.com/thecasualcoder/kube-template/pkg/kubernetes"
 	"github.com/thecasualcoder/kube-template/pkg/manager"
 	"io"
+	"io/ioutil"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"text/template"
 	"time"
 
@@ -19,7 +22,6 @@ import (
 const (
 	kubeConfigFlag = "kubeconfig"
 	templateFlag   = "template"
-	execFlag       = "exec"
 )
 
 // rootCmd represents the base command when called without any subcommands
@@ -35,7 +37,6 @@ var rootCmd = &cobra.Command{
 
 		templateFlag, _ := cmd.Flags().GetString(templateFlag)
 		kubeconfig, _ := cmd.Flags().GetString(kubeConfigFlag)
-		execFlagValue, _ := cmd.Flags().GetString(execFlag)
 
 		fs := afero.NewOsFs()
 
@@ -49,13 +50,9 @@ var rootCmd = &cobra.Command{
 			_ = fs.Remove(templateArg.target.Name())
 		}()
 
-		execCommand, err := newExecCommand(execFlagValue)
-		if err != nil {
-			_ = cmd.Help()
-			return err
-		}
+		const DefaultFileContentWriteTimeout = 2
 
-		return run(templateArg, kubeconfig, execCommand)
+		return run(templateArg, kubeconfig, time.Duration(DefaultFileContentWriteTimeout))
 	},
 }
 
@@ -63,7 +60,6 @@ var rootCmd = &cobra.Command{
 // This is called by main.main(). It only needs to happen once to the rootCmd.
 func Execute() {
 	rootCmd.Flags().StringP(templateFlag, "t", "", "template to render. Should be of the format \"/path/to/template.tmpl:/path/to/rendered.conf\". \"-\" in target means STDOUT")
-	rootCmd.Flags().StringP(execFlag, "e", "", "process to run after rendering")
 
 	kubeconfig := os.Getenv("KUBECONFIG")
 
@@ -91,7 +87,7 @@ func Execute() {
 func run(
 	templateArg templateArg,
 	kubeconfig string,
-	execCommand execCommand,
+	filecontentWriteTimeout time.Duration,
 ) error {
 	client, err := kubernetes.NewClient(kubeconfig)
 	if err != nil {
@@ -100,39 +96,54 @@ func run(
 
 	m := manager.New(client)
 
-	eventChan := m.EventChan()
+	// render the templates first.
+	// This solves 2 purposes:
+	// 		1. check if the go-template has valid syntax.
+	//		2. start pre-fetch of data needed for templates
+	//
+	// Any errors that happen during data fetch will not be captured here.
+	if err = renderTemplate(m, templateArg.source, ioutil.Discard); err != nil && err != manager.ErrDataNotReady {
+		return fmt.Errorf("error rendering template: %v", err)
+	}
+
 	errChan := make(chan error)
-
 	go func() {
-		var previousCmd *exec.Cmd
-		for range eventChan {
-			err := resetFileContent(templateArg.target)
-			if err != nil {
+		buf := &bytes.Buffer{}
+		duration := filecontentWriteTimeout * time.Second
+
+		for {
+			timer := time.NewTimer(duration)
+			select {
+			case err := <-m.ErrorChan():
 				errChan <- err
 				return
-			}
-			if err = renderTemplate(m, templateArg.source, templateArg.target); err != nil {
-				errChan <- err
-				return
-			}
-
-			command := exec.Command(execCommand.command, execCommand.args...)
-			command.Stdout = os.Stdout
-			command.Stderr = os.Stderr
-
-			if previousCmd != nil {
-				if err := killCommandIfRunning(previousCmd); err != nil {
+			case <-m.EventChan():
+				buf.Reset()
+				if err = renderTemplate(m, templateArg.source, buf); err != nil {
+					if err == manager.ErrDataNotReady {
+						buf.Reset()
+						continue
+					}
 					errChan <- err
 					return
 				}
-			}
+				timer.Reset(duration)
+			case <-timer.C:
+				if buf.Len() == 0 {
+					continue
+				}
+				if err := resetFileContent(templateArg.target); err != nil {
+					errChan <- err
+					return
+				}
 
-			if err := execute(command); err != nil {
-				errChan <- err
-				return
-			}
+				if _, err := buf.WriteTo(templateArg.target); err != nil {
+					errChan <- err
+					return
+				}
 
-			previousCmd = command
+				buf.Reset()
+			}
 		}
 	}()
 
@@ -202,6 +213,9 @@ func renderTemplate(m manager.Manager, source string, target io.Writer) error {
 
 	err = tmpl.Execute(target, nil)
 	if err != nil {
+		if strings.Contains(err.Error(), manager.ErrDataNotReady.Error()) {
+			return manager.ErrDataNotReady
+		}
 		return fmt.Errorf("error rendering template: %w", err)
 	}
 	return nil

@@ -7,6 +7,7 @@ import (
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/watch"
 	"testing"
+	"time"
 )
 
 func TestNew(t *testing.T) {
@@ -41,13 +42,27 @@ func TestManager_Endpoints(t *testing.T) {
 	}
 	namespace := "default"
 	resourceName := "nginx"
-	client.EXPECT().GetEndpoints(namespace, resourceName).Return(&expectedEndpoints, nil)
-	client.EXPECT().WatchEndpoints(namespace, resourceName).Return(safeWatcher(ctrl), nil)
+	watcher, resultChan := safeWatcher(ctrl)
+	resultChan <- watch.Event{
+		Object: &expectedEndpoints,
+	}
+	client.EXPECT().WatchEndpoints(namespace, resourceName).Return(watcher, nil)
 
-	endpoints, err := mgr.Endpoints(namespace, resourceName)
+	var actualEndpoints v1.Endpoints
 
-	assert.NoError(t, err)
-	assert.Equal(t, expectedEndpoints, *endpoints)
+	for i := 1; i <= 3; i++ {
+		endpoints, err := mgr.Endpoints(namespace, resourceName)
+		if err == ErrDataNotReady {
+			time.Sleep(time.Duration(i*100) * time.Millisecond)
+			continue
+		}
+
+		if assert.NoError(t, err) {
+			actualEndpoints = *endpoints
+		}
+	}
+
+	assert.Equal(t, expectedEndpoints, actualEndpoints)
 }
 
 func TestManager_PodsWithLabels(t *testing.T) {
@@ -65,17 +80,29 @@ func TestManager_PodsWithLabels(t *testing.T) {
 	namespace := "default"
 	labelSelector := "app=nginx"
 	client.EXPECT().GetPodsWithLabels(namespace, labelSelector).Return(&expectedPodList, nil)
-	client.EXPECT().WatchPodsWithLabels(namespace, labelSelector).Return(safeWatcher(ctrl), nil)
+	watcher, eventChan := safeWatcher(ctrl)
+	eventChan <- watch.Event{}
+	client.EXPECT().WatchPodsWithLabels(namespace, labelSelector).Return(watcher, nil)
 
-	endpoints, err := mgr.PodsWithLabels(namespace, labelSelector)
+	var actualPodList v1.PodList
+	for i := 1; i <= 3; i++ {
+		podList, err := mgr.PodsWithLabels(namespace, labelSelector)
+		if err == ErrDataNotReady {
+			time.Sleep(time.Duration(i*100) * time.Millisecond)
+			continue
+		}
 
-	assert.NoError(t, err)
-	assert.Equal(t, expectedPodList, *endpoints)
+		if assert.NoError(t, err) {
+			actualPodList = *podList
+		}
+	}
+
+	assert.Equal(t, expectedPodList, actualPodList)
 }
 
-func safeWatcher(ctrl *gomock.Controller) watch.Interface {
+func safeWatcher(ctrl *gomock.Controller) (watch.Interface, chan watch.Event) {
 	mockWatch := mock.NewMockInterface(ctrl)
-	dummyChannel := make(chan watch.Event)
+	dummyChannel := make(chan watch.Event, 1)
 	mockWatch.EXPECT().ResultChan().Return(dummyChannel).AnyTimes()
-	return mockWatch
+	return mockWatch, dummyChannel
 }

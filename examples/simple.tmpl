@@ -1,4 +1,4 @@
-{{- with endpoints "default" "tiller-deploy" }}
+{{- with endpoints "default" "nginx-deployment" -}}
 servers:
 {{- range .Subsets }}
 {{- $ports := .Ports }}
@@ -11,7 +11,7 @@ servers:
 {{- end }}
 {{- end }}
 
-{{- with pods "default" "name=tiller" }}
+{{- with pods "default" "app=nginx" }}
 servers:
 {{- range .Items }}
   - {{ .Name }} with IP {{ .Status.PodIP }} with status {{ .Status.Phase }}
